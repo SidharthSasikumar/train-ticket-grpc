@@ -13,7 +13,7 @@ import (
 
 type server struct {
 	ticket.UnimplementedTicketingServiceServer
-	users map[string]*ticket.Receipt
+	users map[string][]*ticket.Receipt // Changed to store multiple receipts per user
 	seats map[string]string
 	mu    sync.Mutex
 }
@@ -33,7 +33,7 @@ func (s *server) PurchaseTicket(ctx context.Context, req *ticket.PurchaseRequest
 		PricePaid: 20,
 		Seat:      seat,
 	}
-	s.users[req.User.Email] = receipt
+	s.users[req.User.Email] = append(s.users[req.User.Email], receipt)
 	s.seats[seat] = req.User.Email
 	fmt.Printf("Ticket purchased successfully %s\n", receipt)
 	return &ticket.PurchaseResponse{
@@ -41,7 +41,6 @@ func (s *server) PurchaseTicket(ctx context.Context, req *ticket.PurchaseRequest
 		Receipt: receipt,
 	}, nil
 }
-
 func (s *server) GetReceipt(ctx context.Context, req *ticket.GetReceiptRequest) (*ticket.GetReceiptResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -50,7 +49,7 @@ func (s *server) GetReceipt(ctx context.Context, req *ticket.GetReceiptRequest) 
 	if !exists {
 		return nil, fmt.Errorf("no receipt found for email: %s", req.Email)
 	}
-
+	fmt.Printf("receipt:%s", receipt)
 	return &ticket.GetReceiptResponse{Receipt: receipt}, nil
 }
 
@@ -64,8 +63,8 @@ func (s *server) ViewUsers(ctx context.Context, req *ticket.ViewUsersRequest) (*
 	defer s.mu.Unlock()
 
 	users := []*ticket.UserSeat{}
-
 	sectionPrefix := req.Section
+
 	for seat, email := range s.seats {
 		if strings.HasPrefix(seat, sectionPrefix) {
 			users = append(users, &ticket.UserSeat{
@@ -82,13 +81,15 @@ func (s *server) RemoveUser(ctx context.Context, req *ticket.RemoveUserRequest) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	receipt, exists := s.users[req.Email]
+	receipts, exists := s.users[req.Email]
 	if !exists {
 		return nil, fmt.Errorf("user with email %v Sasikumars not exist", req.Email)
 	}
 
 	// Free the seat
-	delete(s.seats, receipt.Seat)
+	for _, receipt := range receipts {
+		delete(s.seats, receipt.Seat)
+	}
 
 	// Remove the user from the users map
 	delete(s.users, req.Email)
@@ -103,9 +104,9 @@ func (s *server) ModifySeat(ctx context.Context, req *ticket.ModifySeatRequest) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	receipt, exists := s.users[req.Email]
-	if !exists {
-		return nil, fmt.Errorf("user with email %v Sasikumars not exist", req.Email)
+	receipts, exists := s.users[req.Email]
+	if !exists || len(receipts) == 0 {
+		return nil, fmt.Errorf("user with email %v does not exist", req.Email)
 	}
 
 	// Check if the new seat is already taken
@@ -113,12 +114,16 @@ func (s *server) ModifySeat(ctx context.Context, req *ticket.ModifySeatRequest) 
 		return nil, fmt.Errorf("seat %v is already taken", req.NewSeat)
 	}
 
+	// Modify the most recent receipt
+	receipt := receipts[len(receipts)-1] // Get the most recent receipt
+
 	// Free the old seat
 	delete(s.seats, receipt.Seat)
 
 	// Assign the new seat
 	s.seats[req.NewSeat] = req.Email
 	receipt.Seat = req.NewSeat
+
 	fmt.Printf("User with email %v has been moved to seat %v\n", req.Email, req.NewSeat)
 	return &ticket.ModifySeatResponse{
 		Message: fmt.Sprintf("User with email %v has been moved to seat %v", req.Email, req.NewSeat),
@@ -154,7 +159,7 @@ func main() {
 
 	grpcServer := grpc.NewServer()
 	ticket.RegisterTicketingServiceServer(grpcServer, &server{
-		users: make(map[string]*ticket.Receipt),
+		users: make(map[string][]*ticket.Receipt),
 		seats: make(map[string]string),
 	})
 
