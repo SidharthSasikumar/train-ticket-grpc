@@ -3,21 +3,23 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/SidharthSasikumar/train-ticket-grpc/service"
 	"github.com/SidharthSasikumar/train-ticket-grpc/ticket"
+	"github.com/SidharthSasikumar/train-ticket-grpc/utils"
 	"testing"
 )
 
 func TestPurchaseTicket(t *testing.T) {
-	s := &server{
-		users: make(map[string][]*ticket.Receipt),
-		seats: make(map[string]string),
+	s := &service.Server{
+		Users: make(map[string][]*ticket.Receipt),
+		Seats: make(map[string]string),
 	}
 
 	req := &ticket.PurchaseRequest{
 		From: "London",
 		To:   "France",
 		User: &ticket.User{
-			FirstName: "Sidharth",
+			FirstName: "Sidharth1",
 			LastName:  "Sasikumar",
 			Email:     "sidharth.sasikumar@example.com",
 		},
@@ -33,31 +35,45 @@ func TestPurchaseTicket(t *testing.T) {
 	}
 
 	// Check that the user has 1 receipt
-	if len(s.users[req.User.Email]) != 1 {
-		t.Fatalf("Expected 1 receipt for user, got %d", len(s.users[req.User.Email]))
+	if len(s.Users[req.User.Email]) != 1 {
+		t.Fatalf("Expected 1 receipt for user, got %d", len(s.Users[req.User.Email]))
+	}
+	req2 := &ticket.PurchaseRequest{
+		From: "London",
+		To:   "France",
+		User: &ticket.User{
+			FirstName: "Sidharth2",
+			LastName:  "Sasikumar",
+			Email:     "sidharth.sasikumar@example.com",
+		},
 	}
 
 	// Purchase another ticket for the same user
-	res, err = s.PurchaseTicket(context.Background(), req)
+	res, err = s.PurchaseTicket(context.Background(), req2)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
 	// Check that the user now has 2 receipts
-	if len(s.users[req.User.Email]) != 2 {
-		t.Fatalf("Expected 2 receipts for user, got %d", len(s.users[req.User.Email]))
+	if len(s.Users[req.User.Email]) != 2 {
+		t.Fatalf("Expected 2 receipts for user, got %d", len(s.Users[req.User.Email]))
 	}
 }
 
+const (
+	totalSeatsA = 50 // number of seats in Section A
+	totalSeatsB = 50 // number of seats in Section B
+)
+
 func TestAllocateSeat(t *testing.T) {
-	s := &server{
-		users: make(map[string][]*ticket.Receipt),
-		seats: make(map[string]string),
+	s := &service.Server{
+		Users: make(map[string][]*ticket.Receipt),
+		Seats: make(map[string]string),
 	}
 
 	// Allocate all seats in Section A
 	for i := 1; i <= totalSeatsA; i++ {
-		seat, err := s.allocateSeat()
+		seat, err := utils.AllocateSeat(s.Seats)
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
@@ -67,12 +83,12 @@ func TestAllocateSeat(t *testing.T) {
 			t.Fatalf("Expected seat %v, got %v", expected, seat)
 		}
 		fmt.Printf("Expected Seat Number %s Got %s\n", expected, seat)
-		s.seats[seat] = fmt.Sprintf("user%d@example.com", i) // Mark the seat as taken
+		s.Seats[seat] = fmt.Sprintf("user%d@example.com", i) // Mark the seat as taken
 	}
 
 	// Allocate all seats in Section B
 	for i := 1; i <= totalSeatsB; i++ {
-		seat, err := s.allocateSeat()
+		seat, err := utils.AllocateSeat(s.Seats)
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
@@ -81,11 +97,11 @@ func TestAllocateSeat(t *testing.T) {
 			t.Fatalf("Expected seat %v, got %v", expected, seat)
 		}
 		fmt.Printf("Expected Seat Number %s Got %s\n", expected, seat)
-		s.seats[seat] = fmt.Sprintf("user%d@example.com", totalSeatsA+i) // Mark the seat as taken
+		s.Seats[seat] = fmt.Sprintf("user%d@example.com", totalSeatsA+i) // Mark the seat as taken
 	}
 
 	// Ensure no seats are left
-	_, err := s.allocateSeat()
+	_, err := utils.AllocateSeat(s.Seats)
 	fmt.Printf("Expected: no seats available Got: %s\n", err)
 	if err == nil {
 		t.Fatalf("Expected an error when all seats are taken")
@@ -94,9 +110,9 @@ func TestAllocateSeat(t *testing.T) {
 
 func TestGetReceipt(t *testing.T) {
 	// Initialize the server with a sample receipt stored
-	s := &server{
-		users: make(map[string][]*ticket.Receipt),
-		seats: make(map[string]string),
+	s := &service.Server{
+		Users: make(map[string][]*ticket.Receipt),
+		Seats: make(map[string]string),
 	}
 
 	// Sample receipt to be stored in the server
@@ -104,7 +120,7 @@ func TestGetReceipt(t *testing.T) {
 		From: "London",
 		To:   "France",
 		User: &ticket.User{
-			FirstName: "Sidharth",
+			FirstName: "Sidharth2",
 			LastName:  "Sasikumar",
 			Email:     "sidharth.sasikumar@example.com",
 		},
@@ -113,7 +129,7 @@ func TestGetReceipt(t *testing.T) {
 	}
 
 	// Store the sample receipt in the server
-	s.users[sampleReceipt.User.Email] = []*ticket.Receipt{sampleReceipt}
+	s.Users[sampleReceipt.User.Email] = []*ticket.Receipt{sampleReceipt}
 
 	// Create a GetReceiptRequest with the email of the stored receipt
 	req := &ticket.GetReceiptRequest{
@@ -149,18 +165,18 @@ func TestGetReceipt(t *testing.T) {
 }
 
 func TestViewUsers(t *testing.T) {
-	s := &server{
-		users: make(map[string][]*ticket.Receipt),
-		seats: make(map[string]string),
+	s := &service.Server{
+		Users: make(map[string][]*ticket.Receipt),
+		Seats: make(map[string]string),
 	}
 
 	// Add some users
-	s.users["sidharth.sasikumar@example.com"] = []*ticket.Receipt{
+	s.Users["sidharth.sasikumar@example.com"] = []*ticket.Receipt{
 		{
 			From: "London",
 			To:   "France",
 			User: &ticket.User{
-				FirstName: "Sidharth",
+				FirstName: "Sidharth3",
 				LastName:  "Sasikumar",
 				Email:     "sidharth.sasikumar@example.com",
 			},
@@ -168,9 +184,9 @@ func TestViewUsers(t *testing.T) {
 			Seat:      "A1",
 		},
 	}
-	s.seats["A1"] = "sidharth.sasikumar@example.com"
+	s.Seats["A1"] = "sidharth.sasikumar@example.com"
 
-	s.users["jane.smith@example.com"] = []*ticket.Receipt{
+	s.Users["jane.smith@example.com"] = []*ticket.Receipt{
 		{
 			From: "London",
 			To:   "France",
@@ -183,7 +199,7 @@ func TestViewUsers(t *testing.T) {
 			Seat:      "B1",
 		},
 	}
-	s.seats["B1"] = "jane.smith@example.com"
+	s.Seats["B1"] = "jane.smith@example.com"
 
 	// Request to view users in Section A
 	req := &ticket.ViewUsersRequest{
@@ -212,18 +228,18 @@ func TestViewUsers(t *testing.T) {
 }
 
 func TestRemoveUser(t *testing.T) {
-	s := &server{
-		users: make(map[string][]*ticket.Receipt),
-		seats: make(map[string]string),
+	s := &service.Server{
+		Users: make(map[string][]*ticket.Receipt),
+		Seats: make(map[string]string),
 	}
 
 	// Add a user
-	s.users["sidharth.sasikumar@example.com"] = []*ticket.Receipt{
+	s.Users["sidharth.sasikumar@example.com"] = []*ticket.Receipt{
 		{
 			From: "London",
 			To:   "France",
 			User: &ticket.User{
-				FirstName: "Sidharth",
+				FirstName: "Sidharth4",
 				LastName:  "Sasikumar",
 				Email:     "sidharth.sasikumar@example.com",
 			},
@@ -231,9 +247,9 @@ func TestRemoveUser(t *testing.T) {
 			Seat:      "A1",
 		},
 	}
-	s.seats["A1"] = "sidharth.sasikumar@example.com"
+	s.Seats["A1"] = "sidharth.sasikumar@example.com"
 
-	fmt.Printf("Current Seat allocation %s\n", s.seats)
+	fmt.Printf("Current Seat allocation %s\n", s.Seats)
 	// Remove the user
 	req := &ticket.RemoveUserRequest{
 		Email: "sidharth.sasikumar@example.com",
@@ -244,34 +260,34 @@ func TestRemoveUser(t *testing.T) {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
-	if _, exists := s.users["sidharth.sasikumar@example.com"]; exists {
+	if _, exists := s.Users["sidharth.sasikumar@example.com"]; exists {
 		t.Fatalf("Expected user to be removed, but still exists")
 	}
 
-	if _, seatTaken := s.seats["A1"]; seatTaken {
+	if _, seatTaken := s.Seats["A1"]; seatTaken {
 		t.Fatalf("Expected seat A1 to be freed, but it is still taken")
 	}
 
 	if res.Message != "User with email sidharth.sasikumar@example.com has been removed" {
 		t.Fatalf("Unexpected remove message: %v", res.Message)
 	}
-	fmt.Printf("After Test Seat allocation %s\n", s.seats)
+	fmt.Printf("After Test Seat allocation %s\n", s.Seats)
 
 }
 
 func TestModifySeat(t *testing.T) {
-	s := &server{
-		users: make(map[string][]*ticket.Receipt),
-		seats: make(map[string]string),
+	s := &service.Server{
+		Users: make(map[string][]*ticket.Receipt),
+		Seats: make(map[string]string),
 	}
 
 	// Add a user
-	s.users["sidharth.sasikumar@example.com"] = []*ticket.Receipt{
+	s.Users["sidharth.sasikumar@example.com"] = []*ticket.Receipt{
 		{
 			From: "London",
 			To:   "France",
 			User: &ticket.User{
-				FirstName: "Sidharth",
+				FirstName: "Sidharth5",
 				LastName:  "Sasikumar",
 				Email:     "sidharth.sasikumar@example.com",
 			},
@@ -279,8 +295,8 @@ func TestModifySeat(t *testing.T) {
 			Seat:      "A1",
 		},
 	}
-	s.seats["A1"] = "sidharth.sasikumar@example.com"
-	fmt.Printf("Current Seat allocation %s\n", s.seats)
+	s.Seats["A1"] = "sidharth.sasikumar@example.com"
+	fmt.Printf("Current Seat allocation %s\n", s.Seats)
 	// Modify the seat
 	req := &ticket.ModifySeatRequest{
 		Email:   "sidharth.sasikumar@example.com",
@@ -293,38 +309,38 @@ func TestModifySeat(t *testing.T) {
 	}
 
 	// Retrieve the user's most recent receipt
-	receipts := s.users["sidharth.sasikumar@example.com"]
+	receipts := s.Users["sidharth.sasikumar@example.com"]
 	if receipts[len(receipts)-1].Seat != "B1" {
 		t.Fatalf("Expected seat to be updated to B1, but got %v", receipts[len(receipts)-1].Seat)
 	}
 
-	if _, seatTaken := s.seats["A1"]; seatTaken {
+	if _, seatTaken := s.Seats["A1"]; seatTaken {
 		t.Fatalf("Expected old seat A1 to be freed, but it is still taken")
 	}
 
-	if s.seats["B1"] != "sidharth.sasikumar@example.com" {
-		t.Fatalf("Expected new seat B1 to be taken by sidharth.sasikumar@example.com, but got %v", s.seats["B1"])
+	if s.Seats["B1"] != "sidharth.sasikumar@example.com" {
+		t.Fatalf("Expected new seat B1 to be taken by sidharth.sasikumar@example.com, but got %v", s.Seats["B1"])
 	}
 
 	if res.Message != "User with email sidharth.sasikumar@example.com has been moved to seat B1" {
 		t.Fatalf("Unexpected modify message: %v", res.Message)
 	}
-	fmt.Printf("After Test Seat allocation %s\n", s.seats)
+	fmt.Printf("After Test Seat allocation %s\n", s.Seats)
 }
 
 func TestRemoveUserAndViewUsers(t *testing.T) {
-	s := &server{
-		users: make(map[string][]*ticket.Receipt),
-		seats: make(map[string]string),
+	s := &service.Server{
+		Users: make(map[string][]*ticket.Receipt),
+		Seats: make(map[string]string),
 	}
 
 	// Add a user with a ticket in Section A
-	s.users["sidharth.sasikumar@example.com"] = []*ticket.Receipt{
+	s.Users["sidharth.sasikumar@example.com"] = []*ticket.Receipt{
 		{
 			From: "London",
 			To:   "France",
 			User: &ticket.User{
-				FirstName: "Sidharth",
+				FirstName: "Sidharth6",
 				LastName:  "Sasikumar",
 				Email:     "sidharth.sasikumar@example.com",
 			},
@@ -332,10 +348,10 @@ func TestRemoveUserAndViewUsers(t *testing.T) {
 			Seat:      "A1",
 		},
 	}
-	s.seats["A1"] = "sidharth.sasikumar@example.com"
+	s.Seats["A1"] = "sidharth.sasikumar@example.com"
 
 	// Add another user in Section B
-	s.users["jane.smith@example.com"] = []*ticket.Receipt{
+	s.Users["jane.smith@example.com"] = []*ticket.Receipt{
 		{
 			From: "London",
 			To:   "France",
@@ -348,7 +364,7 @@ func TestRemoveUserAndViewUsers(t *testing.T) {
 			Seat:      "B1",
 		},
 	}
-	s.seats["B1"] = "jane.smith@example.com"
+	s.Seats["B1"] = "jane.smith@example.com"
 
 	// Remove the user in Section A
 	removeReq := &ticket.RemoveUserRequest{
