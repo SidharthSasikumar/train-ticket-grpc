@@ -26,7 +26,7 @@ func (s *Server) PurchaseTicket(ctx context.Context, req *ticket.PurchaseRequest
 	}
 
 	if receipts, userExist := s.Users[req.User.Email]; userExist {
-		for _, receipt := range receipts { // Correctly iterating over the user's receipts
+		for _, receipt := range receipts {
 			if receipt.User.FirstName == req.User.FirstName && receipt.User.LastName == req.User.LastName {
 				return nil, fmt.Errorf("the user already has a seat for the journey: seatNumber: %v", receipt.Seat)
 			}
