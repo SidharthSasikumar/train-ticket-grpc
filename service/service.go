@@ -32,12 +32,24 @@ func (s *Server) PurchaseTicket(ctx context.Context, req *ticket.PurchaseRequest
 			}
 		}
 	}
+	finalPrice := 20
+	if req.DiscountCode != "" {
+		fmt.Printf("Inside if condiftion ")
+		switch req.DiscountCode {
+		case "DIS5":
+			finalPrice -= 5
+			break
+		case "DIS10":
+			finalPrice -= 10
+		default:
+		}
+	}
 
 	receipt := &ticket.Receipt{
 		From:      req.From,
 		To:        req.To,
 		User:      req.User,
-		PricePaid: 20,
+		PricePaid: float32(finalPrice),
 		Seat:      seat,
 	}
 	s.Users[req.User.Email] = append(s.Users[req.User.Email], receipt)
