@@ -5,9 +5,15 @@ import (
 	"fmt"
 	"github.com/SidharthSasikumar/train-ticket-grpc/ticket"
 	"github.com/SidharthSasikumar/train-ticket-grpc/utils"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	"regexp"
 	"strings"
 	"sync"
 )
+
+var validSeat = regexp.MustCompile(`^[AB]([1-9]|[1-4][0-9]|50)$`)
 
 type Server struct {
 	ticket.UnimplementedTicketingServiceServer
@@ -17,9 +23,18 @@ type Server struct {
 }
 
 func (s *Server) PurchaseTicket(ctx context.Context, req *ticket.PurchaseRequest) (*ticket.PurchaseResponse, error) {
+	if req == nil || req.User == nil || strings.TrimSpace(req.User.Email) == "" {
+		return nil, status.Error(codes.InvalidArgument, "invalid request")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.Users == nil {
+		s.Users = make(map[string][]*ticket.Receipt)
+	}
+	if s.Seats == nil {
+		s.Seats = make(map[string]string)
+	}
 	seat, err := utils.AllocateSeat(s.Seats)
 	if err != nil {
 		return nil, err
@@ -48,7 +63,7 @@ func (s *Server) PurchaseTicket(ctx context.Context, req *ticket.PurchaseRequest
 	receipt := &ticket.Receipt{
 		From:      req.From,
 		To:        req.To,
-		User:      req.User,
+		User:      proto.Clone(req.User).(*ticket.User),
 		PricePaid: float32(finalPrice),
 		Seat:      seat,
 	}
@@ -57,10 +72,13 @@ func (s *Server) PurchaseTicket(ctx context.Context, req *ticket.PurchaseRequest
 	fmt.Printf("Ticket purchased successfully %s\n", receipt)
 	return &ticket.PurchaseResponse{
 		Message: "Ticket purchased successfully",
-		Receipt: receipt,
+		Receipt: proto.Clone(receipt).(*ticket.Receipt),
 	}, nil
 }
 func (s *Server) GetReceipt(ctx context.Context, req *ticket.GetReceiptRequest) (*ticket.GetReceiptResponse, error) {
+	if req == nil || strings.TrimSpace(req.Email) == "" {
+		return nil, status.Error(codes.InvalidArgument, "invalid request")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -69,9 +87,16 @@ func (s *Server) GetReceipt(ctx context.Context, req *ticket.GetReceiptRequest) 
 		return nil, fmt.Errorf("no receipt found for email: %s", req.Email)
 	}
 	fmt.Printf("receipt:%s", receipt)
-	return &ticket.GetReceiptResponse{Receipt: receipt}, nil
+	copies := make([]*ticket.Receipt, len(receipt))
+	for i, item := range receipt {
+		copies[i] = proto.Clone(item).(*ticket.Receipt)
+	}
+	return &ticket.GetReceiptResponse{Receipt: copies}, nil
 }
 func (s *Server) ViewUsers(ctx context.Context, req *ticket.ViewUsersRequest) (*ticket.ViewUsersResponse, error) {
+	if req == nil || (req.Section != "A" && req.Section != "B") {
+		return nil, status.Error(codes.InvalidArgument, "invalid request")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -91,6 +116,9 @@ func (s *Server) ViewUsers(ctx context.Context, req *ticket.ViewUsersRequest) (*
 }
 
 func (s *Server) RemoveUser(ctx context.Context, req *ticket.RemoveUserRequest) (*ticket.RemoveUserResponse, error) {
+	if req == nil || strings.TrimSpace(req.Email) == "" {
+		return nil, status.Error(codes.InvalidArgument, "invalid request")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -114,6 +142,9 @@ func (s *Server) RemoveUser(ctx context.Context, req *ticket.RemoveUserRequest) 
 }
 
 func (s *Server) ModifySeat(ctx context.Context, req *ticket.ModifySeatRequest) (*ticket.ModifySeatResponse, error) {
+	if req == nil || strings.TrimSpace(req.Email) == "" || !validSeat.MatchString(req.NewSeat) {
+		return nil, status.Error(codes.InvalidArgument, "invalid request")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
